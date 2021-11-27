@@ -1,1 +1,2 @@
-# SecondProblemAlgo
+Лунга Артём
+Б05-031
