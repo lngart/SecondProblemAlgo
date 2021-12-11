@@ -1,156 +1,157 @@
+#include <algorithm>
 #include <iostream>
 #include <limits>
-#include <memory>
-#include <stack>
 #include <vector>
 #include <queue>
 
-template<typename T>
-struct Operations
-{
-    Operations() {}
+template <typename T>
+struct Operations {
+    Operations() {
+    }
 
-    T increase_first_digit(T number)
-    {
-        if (number / digit_capacity != 9)
+    static T increase_first_digit_if_less_nine(T number) {
+        if (first_digit_is_less_nine(number))
             return number + digit_capacity;
         return number;
     }
 
-    T decrease_number(T number)
-    {
-        if (number % 10 != 1)
+    static T reduce_last_digit_if_more_one(T number) {
+        if (last_digit_is_more_one(number))
             return number - 1;
         return number;
     }
 
-    T cyclic_shift_right(T number) { return (number % 10) * digit_capacity + number / 10; }
+    static T cyclic_shift_right(T number) {
+        return (number % 10) * digit_capacity + number / 10;
+    }
 
-    T cyclic_shift_left(T number)
-    {
+    static T cyclic_shift_left(T number) {
         return (number % digit_capacity) * 10 + number / digit_capacity;
     }
 
 private:
-    const unsigned short digit_capacity = 1000;
+    const static unsigned short digit_capacity = 1000;
+
+    static bool first_digit_is_less_nine(T number) {
+        return number / digit_capacity != 9;
+    }
+
+    static bool last_digit_is_more_one(T number) {
+        return number % 10 != 1;
+    }
 };
 
-template<typename T>
-class IGraph
-{
+template <typename T>
+class IGraph {
 public:
     using vertex = T;
 
-    virtual std::vector<vertex> get_neighbors(vertex v) const = 0;
+    virtual const std::vector<vertex> &get_neighbors(vertex v) const = 0;
     virtual void add_edge(vertex from, vertex to) = 0;
     virtual size_t size() const = 0;
-    virtual ~IGraph() {}
+    virtual ~IGraph() {
+    }
 };
 
-template<typename T>
-class ListGraph : public IGraph<T>
-{
+template <typename T>
+class ListGraph : public IGraph<T> {
     using typename IGraph<T>::vertex;
 
     std::vector<std::vector<vertex>> vertices;
 
 public:
-    ListGraph(size_t num_vertices) : vertices(num_vertices) {}
-
-    std::vector<vertex> get_neighbors(vertex v) const override { return vertices.at(v); }
-
-    void add_edge(vertex from, vertex to) override
-    {
-        vertices.at(from).push_back(to);
-        vertices.at(to).push_back(from);
+    ListGraph(size_t num_vertices) : vertices(num_vertices) {
     }
 
-    inline size_t size() const override { return vertices.size(); }
+    const std::vector<vertex> &get_neighbors(vertex v) const override {
+        return vertices.at(v);
+    }
+
+    void add_edge(vertex from, vertex to) override {
+        vertices.at(from).push_back(to);
+    }
+
+    inline size_t size() const override {
+        return vertices.size();
+    }
 };
 
-enum class Color { white, black };
-
-template<typename T>
-void apply_operations(std::unique_ptr<IGraph<T>> &graph, T number)
-{
-    Operations<T> operations;
-    graph->add_edge(number, operations.increase_first_digit(number));
-    graph->add_edge(number, operations.decrease_number(number));
-    graph->add_edge(number, operations.cyclic_shift_right(number));
-    graph->add_edge(number, operations.cyclic_shift_left(number));
-}
-
-template<typename T>
-void bfs(std::unique_ptr<IGraph<T>> &graph,
-         T starting_vertex,
-         T ending_vertex,
-         std::vector<T> &parents)
-{
-    std::vector<Color> colors(graph->size(), Color::white);
+template <typename T>
+void bfs(IGraph<T> &graph, T from, std::vector<T> &parent, std::vector<T> &distance) {
+    distance[from] = 0;
     std::queue<T> vertices_queue;
-    vertices_queue.push(starting_vertex);
-    colors[starting_vertex] = Color::black;
-
+    vertices_queue.push(from);
     while (!vertices_queue.empty()) {
         auto top_vertex = vertices_queue.front();
         vertices_queue.pop();
-
-        if (top_vertex == ending_vertex)
-            break;
-
-        apply_operations(graph, top_vertex);
-        std::vector<T> neighbors = graph->get_neighbors(top_vertex);
-
-        for (unsigned short i{0}; i < neighbors.size(); ++i)
-            if (colors[neighbors[i]] == Color::white) {
-                colors[neighbors[i]] = Color::black;
-                parents[neighbors[i]] = top_vertex;
-                vertices_queue.push(neighbors[i]);
+        const auto &neighbors = graph.get_neighbors(top_vertex);
+        for (const auto &v : neighbors)
+            if (distance[v] == std::numeric_limits<T>::max()) {
+                vertices_queue.push(v);
+                distance[v] = distance[top_vertex] + 1;
+                parent[v] = top_vertex;
             }
     }
 }
 
-template<typename T>
-void get_way(std::unique_ptr<IGraph<T>> &graph, T starting_number, T ending_number)
-{
-    T number = ending_number;
+template <typename T>
+void find_shortest_way(IGraph<T> &graph, std::vector<T> &vertices_on_way, T starting_vertex, T ending_vertex) {
+    std::vector<T> parent(graph.size(), std::numeric_limits<T>::max()),
+        distance(graph.size(), std::numeric_limits<T>::max());
 
-    std::vector<T> parents(graph->size(), std::numeric_limits<T>::max());
+    bfs(graph, starting_vertex, parent, distance);
 
-    bfs(graph, starting_number, ending_number, parents);
+    if (distance[ending_vertex] != std::numeric_limits<T>::max()) {
+        auto current_vertex = ending_vertex;
 
-    std::stack<T> way;
-    while (number != std::numeric_limits<T>::max()) {
-        way.push(number);
-        number = parents[number];
-    }
+        vertices_on_way.emplace_back(current_vertex);
 
-    std::cout << way.size() << std::endl;
-    while (!way.empty()) {
-        std::cout << way.top() << std::endl;
-        way.pop();
+        while (parent[current_vertex] != std::numeric_limits<T>::max()) {
+            current_vertex = parent[current_vertex];
+            vertices_on_way.emplace_back(current_vertex);
+        }
+
+        std::reverse(vertices_on_way.begin(), vertices_on_way.end());
     }
 }
 
-template<typename T>
-void initialization(std::unique_ptr<IGraph<T>> &graph,
-                    size_t num_vertices,
-                    T &starting_vertex,
-                    T &ending_vertex)
-{
-    graph = std::make_unique<ListGraph<int>>(num_vertices);
+template <typename T>
+void print_shortest_way(IGraph<int> &graph, T starting_number, T ending_number) {
+    std::vector<T> way;
+
+    find_shortest_way(graph, way, starting_number, ending_number);
+
+    std::cout << way.size() << std::endl;
+    for (const auto &number : way)
+        std::cout << number << std::endl;
+}
+
+template <typename T>
+void initialization(T &starting_vertex, T &ending_vertex) {
     std::cin >> starting_vertex >> ending_vertex;
 }
 
-int main()
-{
-    const unsigned short max_number = 10000;
-    std::unique_ptr<IGraph<int>> numbers;
+template <typename T>
+void build_graph_numbers(IGraph<T> &graph, const unsigned short min_number, const unsigned short max_number) {
+    for (T current_number = min_number; current_number < max_number; ++current_number) {
+        graph.add_edge(current_number, Operations<T>::increase_first_digit_if_less_nine(current_number));
+        graph.add_edge(current_number, Operations<T>::reduce_last_digit_if_more_one(current_number));
+        graph.add_edge(current_number, Operations<T>::cyclic_shift_right(current_number));
+        graph.add_edge(current_number, Operations<T>::cyclic_shift_left(current_number));
+    }
+}
+
+int main() {
+    const unsigned short min_number = 1000, max_number = 10000;
     int starting_number{0}, ending_number{0};
 
-    initialization(numbers, max_number, starting_number, ending_number);
+    initialization(starting_number, ending_number);
 
-    get_way(numbers, starting_number, ending_number);
+    ListGraph<int> numbers(max_number);
+
+    build_graph_numbers(numbers, min_number, max_number);
+
+    print_shortest_way(numbers, starting_number, ending_number);
 
     return 0;
 }
