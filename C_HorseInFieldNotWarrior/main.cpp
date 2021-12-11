@@ -1,138 +1,188 @@
+#include <algorithm>
 #include <iostream>
 #include <limits>
-#include <memory>
-#include <stack>
-#include <utility>
 #include <vector>
 #include <queue>
 
-template<typename T>
-class IGraph
-{
+template <typename T>
+class IGraph {
 public:
     using vertex = T;
 
-    virtual void add_vertex(size_t first_coordinate, size_t second_coordinate, vertex value) = 0;
-    virtual vertex get_vertex(size_t first_coordinate, size_t second_coordinate) const = 0;
+    virtual const std::vector<vertex> &get_neighbors(vertex v) const = 0;
+    virtual void add_edge(vertex from, vertex to) = 0;
     virtual size_t size() const = 0;
-    virtual ~IGraph() {}
+    virtual ~IGraph() {
+    }
 };
 
-template<typename T>
-class MatrixGraph : public IGraph<T>
-{
+template <typename T>
+class ListGraph : public IGraph<T> {
     using typename IGraph<T>::vertex;
 
-    std::vector<std::vector<vertex>> distance;
+    std::vector<std::vector<vertex>> vertices;
 
 public:
-    MatrixGraph(size_t num_vertices)
-        : distance(num_vertices,
-                   std::vector<vertex>(num_vertices, std::numeric_limits<vertex>::max()))
-    {}
-
-    vertex get_vertex(size_t first_coordinate, size_t second_coordinate) const override
-    {
-        return distance.at(first_coordinate).at(second_coordinate);
+    ListGraph(size_t num_vertices) : vertices(num_vertices) {
     }
 
-    void add_vertex(size_t first_coordinate, size_t second_coordinate, vertex value) override
-    {
-        distance.at(first_coordinate).at(second_coordinate) = value;
+    const std::vector<vertex> &get_neighbors(vertex v) const override {
+        return vertices.at(v);
     }
 
-    inline size_t size() const override { return distance.size(); }
+    void add_edge(vertex from, vertex to) override {
+        vertices.at(from).push_back(to);
+        vertices.at(to).push_back(from);
+    }
+
+    inline size_t size() const override {
+        return vertices.size();
+    }
 };
 
-template<typename T>
-void find_shortest_way(std::unique_ptr<IGraph<T>> &graph,
-                       T starting_x,
-                       T starting_y,
-                       std::vector<std::vector<std::pair<T, T>>> &parents)
-{
-    auto graph_size = graph->size();
+struct Cell {
+    Cell(int x_coordinate, int y_coordinate) : first_coordinate{x_coordinate}, second_coordinate{y_coordinate} {
+    }
 
-    std::vector<std::pair<short, short>> shift_x_y
-        = {{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2}, {1, -2}, {1, 2}, {2, -1}, {2, 1}};
+    int first_coordinate;
+    int second_coordinate;
 
-    std::queue<std::pair<T, T>> queue_vertices;
-    graph->add_vertex(starting_x, starting_y, 0);
+    Cell &operator--() {
+        --first_coordinate, --second_coordinate;
+        return *this;
+    }
+};
 
-    queue_vertices.push({starting_x, starting_y});
-    while (!queue_vertices.empty()) {
-        auto [first_coordinate, second_coordinate] = queue_vertices.front();
-        queue_vertices.pop();
-        for (size_t i{0}; i < shift_x_y.size(); ++i) {
-            auto current_x = first_coordinate + shift_x_y[i].first,
-                 current_y = second_coordinate + shift_x_y[i].second;
+std::istream &operator>>(std::istream &in, Cell &cell) {
+    in >> cell.first_coordinate >> cell.second_coordinate;
+    return in;
+}
 
-            if (current_x >= 0 && current_x < graph_size && current_y >= 0 && current_y < graph_size
-                && graph->get_vertex(current_x, current_y)
-                       > graph->get_vertex(first_coordinate, second_coordinate) + 1) {
-                graph->add_vertex(current_x,
-                                  current_y,
-                                  graph->get_vertex(first_coordinate, second_coordinate) + 1);
-                queue_vertices.push({current_x, current_y});
+struct Move {
+    static const std::vector<Cell> moves;
+};
 
-                parents[current_x][current_y] = {first_coordinate, second_coordinate};
+const std::vector<Cell> Move::moves = {{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2}, {1, -2}, {1, 2}, {2, -1}, {2, 1}};
+
+class Board {
+    int num_cells_along_side;
+
+public:
+    Board(int board_num_cells_along_side) : num_cells_along_side(board_num_cells_along_side) {
+    }
+
+    bool cell_is_in_board(Cell cell) const {
+        return (cell.first_coordinate >= 0 && cell.second_coordinate >= 0 &&
+                cell.first_coordinate < num_cells_along_side && cell.second_coordinate < num_cells_along_side);
+    }
+
+    int convert_one_dimensional_coordinates(Cell cell) const {
+        return cell.first_coordinate * num_cells_along_side + cell.second_coordinate;
+    }
+
+    size_t get_num_cells_along_side() const {
+        return num_cells_along_side;
+    }
+};
+
+template <typename T>
+void bfs(IGraph<T> &graph, T from, std::vector<T> &parent, std::vector<T> &distance) {
+    distance[from] = 0;
+    std::queue<T> vertices_queue;
+    vertices_queue.push(from);
+    while (!vertices_queue.empty()) {
+        auto top_vertex = vertices_queue.front();
+        vertices_queue.pop();
+        const auto &neighbors = graph.get_neighbors(top_vertex);
+        for (const auto &v : neighbors)
+            if (distance[v] == std::numeric_limits<T>::max()) {
+                vertices_queue.push(v);
+                distance[v] = distance[top_vertex] + 1;
+                parent[v] = top_vertex;
             }
+    }
+}
+
+template <typename T>
+void find_shortest_way(IGraph<T> &graph, std::vector<T> &vertices_on_way, T starting_vertex, T ending_vertex) {
+    std::vector<T> parent(graph.size(), std::numeric_limits<T>::max()),
+        distance(graph.size(), std::numeric_limits<T>::max());
+
+    bfs(graph, starting_vertex, parent, distance);
+
+    if (distance[ending_vertex] != std::numeric_limits<T>::max()) {
+        auto current_vertex = ending_vertex;
+
+        vertices_on_way.emplace_back(current_vertex);
+
+        while (parent[current_vertex] != std::numeric_limits<T>::max()) {
+            current_vertex = parent[current_vertex];
+            vertices_on_way.emplace_back(current_vertex);
         }
+
+        std::reverse(vertices_on_way.begin(), vertices_on_way.end());
     }
 }
 
-template<typename T>
-void get_shortest_way(
-    std::unique_ptr<IGraph<T>> &graph, T starting_x, T starting_y, T ending_x, T ending_y)
-{
-    auto graph_size = graph->size();
-    std::vector<std::vector<std::pair<T, T>>>
-        parents(graph_size,
-                std::vector<std::pair<T, T>>(graph_size,
-                                             {std::numeric_limits<T>::max(),
-                                              std::numeric_limits<T>::max()}));
+template <typename T>
+void print_shortest_way(IGraph<T> &graph, size_t num_cells_along_side, T starting_vertex, T ending_vertex) {
+    std::vector<T> vertices_on_way;
 
-    find_shortest_way(graph, starting_x, starting_y, parents);
-    std::cout << graph->get_vertex(ending_x, ending_y) << std::endl;
+    find_shortest_way(graph, vertices_on_way, starting_vertex, ending_vertex);
 
-    std::stack<std::pair<T, T>> way;
-    way.push({ending_x + 1, ending_y + 1});
+    std::cout << vertices_on_way.size() - 1 << '\n';
 
-    for (T current_x{ending_x}, current_y{ending_y};
-         current_x != starting_x || current_y != starting_y;) {
-        way.push(
-            {parents[current_x][current_y].first + 1, parents[current_x][current_y].second + 1});
-        T tmp_x = current_x, tmp_y = current_y;
-        current_x = parents[tmp_x][tmp_y].first, current_y = parents[tmp_x][tmp_y].second;
-    }
-
-    while (!way.empty()) {
-        std::cout << way.top().first << " " << way.top().second << std::endl;
-        way.pop();
+    for (const auto &vertex : vertices_on_way) {
+        auto first_coordinate = vertex / num_cells_along_side, second_coordinate = vertex % num_cells_along_side;
+        std::cout << first_coordinate + 1 << " " << second_coordinate + 1 << '\n';
     }
 }
 
-template<typename T>
-void initialization(std::unique_ptr<IGraph<T>> &graph,
-                    size_t &num_vertices,
-                    T &starting_x,
-                    T &starting_y,
-                    T &ending_x,
-                    T &ending_y)
-{
-    std::cin >> num_vertices >> starting_x >> starting_y >> ending_x >> ending_y;
-    --starting_x, --starting_y, --ending_x, --ending_y;
-    graph = std::make_unique<MatrixGraph<T>>(num_vertices);
+void initialization(size_t &num_cells_along_side, Cell &starting_cell, Cell &ending_cell) {
+    std::cin >> num_cells_along_side >> starting_cell >> ending_cell;
+    --starting_cell, --ending_cell;
 }
 
-int main()
-{
-    size_t num_cells{0};
-    int starting_x{0}, starting_y{0}, ending_x{0}, ending_y{0};
-    std::unique_ptr<IGraph<int>> chess_field;
+void get_first_and_last_moves(int &first_move, int &last_move, Cell &starting_cell, Cell &ending_cell,
+                              Board &chess_field) {
+    first_move = chess_field.convert_one_dimensional_coordinates(starting_cell);
+    last_move = chess_field.convert_one_dimensional_coordinates(ending_cell);
+}
 
-    initialization(chess_field, num_cells, starting_x, starting_y, ending_x, ending_y);
+template <typename T>
+void construct_knight_moves(IGraph<T> &knight_moves, Board &chess_field) {
+    for (size_t first_coordinate{0}; first_coordinate < chess_field.get_num_cells_along_side(); ++first_coordinate)
+        for (size_t second_coordinate{0}; second_coordinate < chess_field.get_num_cells_along_side();
+             ++second_coordinate)
+            for (const auto &move : Move::moves) {
+                auto current_cell = Cell(first_coordinate, second_coordinate),
+                     next_cell =
+                         Cell(first_coordinate + move.first_coordinate, second_coordinate + move.second_coordinate);
 
-    get_shortest_way(chess_field, starting_x, starting_y, ending_x, ending_y);
+                if (chess_field.cell_is_in_board(next_cell)) {
+                    T from = chess_field.convert_one_dimensional_coordinates(current_cell),
+                      to = chess_field.convert_one_dimensional_coordinates(next_cell);
+
+                    knight_moves.add_edge(from, to);
+                }
+            }
+}
+
+int main() {
+    size_t num_cells_along_side{0};
+    Cell starting_cell{0, 0}, ending_cell{0, 0};
+    int first_move{0}, last_move{0};
+
+    initialization(num_cells_along_side, starting_cell, ending_cell);
+
+    ListGraph<int> knight_moves(num_cells_along_side * num_cells_along_side);
+    Board chess_field(num_cells_along_side);
+
+    construct_knight_moves(knight_moves, chess_field);
+
+    get_first_and_last_moves(first_move, last_move, starting_cell, ending_cell, chess_field);
+
+    print_shortest_way(knight_moves, num_cells_along_side, first_move, last_move);
 
     return 0;
 }
